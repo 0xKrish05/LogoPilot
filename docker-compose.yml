@@ -38,6 +38,21 @@ services:
       - "8001:8000"
     volumes:
       - media_temp:/tmp/media
+    networks:
+      - default
+      - coolify
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.routers.logopilot-api.rule=Host(`api.15-135-74-108.sslip.io`)
+      - traefik.http.routers.logopilot-api.entrypoints=https
+      - traefik.http.routers.logopilot-api.tls=true
+      - traefik.http.routers.logopilot-api.tls.certresolver=letsencrypt
+      - traefik.http.services.logopilot-api.loadbalancer.server.port=8000
+      - traefik.http.routers.logopilot-api-http.rule=Host(`api.15-135-74-108.sslip.io`)
+      - traefik.http.routers.logopilot-api-http.entrypoints=http
+      - traefik.http.routers.logopilot-api-http.middlewares=logopilot-api-redirect
+      - traefik.http.middlewares.logopilot-api-redirect.redirectscheme.scheme=https
 
   worker:
     build: ./backend
@@ -69,6 +84,25 @@ services:
       - backend
     ports:
       - "3000:3000"
+    networks:
+      - default
+      - coolify
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      - traefik.http.routers.logopilot-app.rule=Host(`app.15-135-74-108.sslip.io`)
+      - traefik.http.routers.logopilot-app.entrypoints=https
+      - traefik.http.routers.logopilot-app.tls=true
+      - traefik.http.routers.logopilot-app.tls.certresolver=letsencrypt
+      - traefik.http.services.logopilot-app.loadbalancer.server.port=3000
+      - traefik.http.routers.logopilot-app-http.rule=Host(`app.15-135-74-108.sslip.io`)
+      - traefik.http.routers.logopilot-app-http.entrypoints=http
+      - traefik.http.routers.logopilot-app-http.middlewares=logopilot-app-redirect
+      - traefik.http.middlewares.logopilot-app-redirect.redirectscheme.scheme=https
+
+networks:
+  coolify:
+    external: true
 
 volumes:
   postgres_data:
