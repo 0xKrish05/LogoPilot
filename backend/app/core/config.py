@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_redirect_uri: str = ""
+    frontend_base_url: str = ""
 
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""

@@ -60,6 +60,14 @@ export interface QueueItem {
   last_error: string | null;
 }
 
+export interface IgAccount {
+  id: string;
+  ig_user_id: string;
+  username: string;
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface Me {
   id: string;
   email: string;
