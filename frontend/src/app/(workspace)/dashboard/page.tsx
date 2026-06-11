@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { motion } from "framer-motion";
 import { StatCard } from "@/components/StatCard";
 import { QueueStatusBadge } from "@/components/StatusBadge";
+import { FadeUp, StaggerGrid, StaggerItem } from "@/components/Motion";
 import { useData } from "@/lib/useData";
 import type { Automation, QueueItem, QueueStatus } from "@/lib/types";
 
@@ -25,9 +27,17 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       {/* Hero strip */}
-      <div className="card relative overflow-hidden bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 p-7 text-white">
-        <div className="absolute -right-10 -top-16 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
-        <div className="absolute -bottom-20 right-32 h-40 w-40 rounded-full bg-fuchsia-300/20 blur-2xl" />
+      <FadeUp className="card relative overflow-hidden bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 p-7 text-white">
+        <motion.div
+          className="absolute -right-10 -top-16 h-48 w-48 rounded-full bg-white/10 blur-2xl"
+          animate={{ x: [0, 20, 0], y: [0, 15, 0] }}
+          transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <motion.div
+          className="absolute -bottom-20 right-32 h-40 w-40 rounded-full bg-fuchsia-300/20 blur-2xl"
+          animate={{ x: [0, -15, 0], y: [0, -20, 0] }}
+          transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+        />
         <h2 className="font-display text-2xl font-bold">
           Your pipeline at a glance ✨
         </h2>
@@ -42,27 +52,28 @@ export default function DashboardPage() {
         >
           ⚡ {automations.length > 0 ? "Manage automations" : "Create your first automation"}
         </Link>
-      </div>
+      </FadeUp>
 
       {/* Stats */}
-      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Automations" value={automations.length} hint={`${active} active`} icon="⚡" accent="indigo" />
-        <StatCard label="Daily target" value={dailyTarget} hint="uploads / day across all" icon="🎯" accent="sky" />
-        <StatCard label="Needs attention" value={errored} hint={errored ? "automation errors" : "all clear"} icon={errored ? "🚨" : "✅"} accent={errored ? "rose" : "emerald"} />
-        <StatCard label="Platform" value="Instagram" hint="YouTube & TikTok soon" icon="📸" accent="fuchsia" />
-      </div>
+      <StaggerGrid className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <StaggerItem><StatCard label="Automations" value={automations.length} hint={`${active} active`} icon="⚡" accent="indigo" /></StaggerItem>
+        <StaggerItem><StatCard label="Daily target" value={dailyTarget} hint="uploads / day across all" icon="🎯" accent="sky" /></StaggerItem>
+        <StaggerItem><StatCard label="Needs attention" value={errored} hint={errored ? "automation errors" : "all clear"} icon={errored ? "🚨" : "✅"} accent={errored ? "rose" : "emerald"} /></StaggerItem>
+        <StaggerItem><StatCard label="Platform" value="Instagram" hint="YouTube & TikTok soon" icon="📸" accent="fuchsia" /></StaggerItem>
+      </StaggerGrid>
 
       {/* Pipeline stages */}
-      <div className="card p-6">
+      <FadeUp delay={0.1} className="card p-6">
         <h3 className="font-display text-base font-bold">Pipeline stages</h3>
         <p className="mt-1 text-sm text-ink-soft">
           Every reel travels through these stages automatically.
         </p>
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {PIPELINE.map((p, i) => (
-            <div
+            <motion.div
               key={p.status}
-              className="group relative rounded-xl border border-line bg-surface-2 p-4 text-center transition hover:border-transparent hover:shadow-glow"
+              whileHover={{ y: -3, scale: 1.03 }}
+              className="group relative rounded-xl border border-line bg-surface-2 p-4 text-center transition-colors hover:border-transparent hover:shadow-glow"
             >
               <div
                 className={`mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br text-xs font-bold text-white ${p.color}`}
@@ -70,15 +81,15 @@ export default function DashboardPage() {
                 {i + 1}
               </div>
               <p className="mt-2.5 text-xs font-semibold">{p.label}</p>
-            </div>
+            </motion.div>
           ))}
         </div>
-      </div>
+      </FadeUp>
 
       {/* Per-automation queues */}
-      <div className="grid gap-5 lg:grid-cols-2">
+      <StaggerGrid className="grid gap-5 lg:grid-cols-2">
         {automations.slice(0, 4).map((a) => (
-          <AutomationQueuePreview key={a.id} automation={a} />
+          <StaggerItem key={a.id}><AutomationQueuePreview automation={a} /></StaggerItem>
         ))}
         {automations.length === 0 && (
           <div className="card p-6 lg:col-span-2">
@@ -87,7 +98,7 @@ export default function DashboardPage() {
             </p>
           </div>
         )}
-      </div>
+      </StaggerGrid>
     </div>
   );
 }
