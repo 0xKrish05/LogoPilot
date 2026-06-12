@@ -104,10 +104,14 @@ def download_reel(self, queue_item_id: str) -> None:
 
         ydl_opts = {
             "outtmpl": output_template,
-            "format": "mp4/best",
+            "format": "bestvideo+bestaudio/best",
+            "merge_output_format": "mp4",
+            "postprocessors": [{"key": "FFmpegVideoConvertor", "preferedformat": "mp4"}],
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
+            "retries": 3,
+            "fragment_retries": 3,
         }
 
         if automation and automation.instagram_cookies_encrypted:
