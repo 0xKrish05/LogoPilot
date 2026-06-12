@@ -13,8 +13,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   access_denied: "Instagram authorization was cancelled or denied.",
   invalid_state: "Something went wrong with the connection request. Please try again.",
   token_exchange_failed: "Could not verify Instagram authorization. Please try again.",
-  no_instagram_account: "No Instagram Business account found on your Facebook Pages. Make sure your Instagram account is set to Business/Professional and linked to a Facebook Page.",
+  no_instagram_account: "Could not read your Instagram profile. Make sure your Instagram account is set to Business/Professional.",
   user_not_found: "Account lookup failed. Please sign in again and retry.",
+  account_limit_reached: "You've reached the Instagram account limit for your plan. Upgrade or disconnect an account to add another.",
 };
 
 export default function AccountsPage() {

@@ -17,27 +17,31 @@ from app.services.plan_limits import get_active_plan
 
 router = APIRouter(prefix="/instagram", tags=["instagram"])
 
-GRAPH_API = "https://graph.facebook.com/v19.0"
-OAUTH_DIALOG = "https://www.facebook.com/v19.0/dialog/oauth"
-SCOPES = "instagram_basic,instagram_content_publish,pages_show_list,business_management"
+IG_OAUTH_DIALOG = "https://www.instagram.com/oauth/authorize"
+IG_TOKEN_URL = "https://api.instagram.com/oauth/access_token"
+IG_GRAPH_API = "https://graph.instagram.com/v21.0"
+SCOPES = (
+    "instagram_business_basic,instagram_business_content_publish,"
+    "instagram_business_manage_comments,instagram_business_manage_messages"
+)
 
 
 @router.get("/connect")
 async def connect_instagram(user: User = Depends(get_current_user)):
-    """Returns the Facebook OAuth URL the frontend should redirect the user to."""
+    """Returns the Instagram Business Login OAuth URL the frontend should redirect to."""
     params = {
-        "client_id": settings.meta_app_id,
+        "client_id": settings.instagram_app_id,
         "redirect_uri": settings.meta_redirect_uri,
         "scope": SCOPES,
         "response_type": "code",
         "state": str(user.id),
     }
-    return {"url": f"{OAUTH_DIALOG}?{urlencode(params)}"}
+    return {"url": f"{IG_OAUTH_DIALOG}?{urlencode(params)}"}
 
 
 @router.get("/callback")
 async def instagram_callback(code: str | None = None, state: str | None = None, error: str | None = None):
-    """Meta redirects here after the user approves/denies access."""
+    """Instagram redirects here after the user approves/denies access."""
     frontend_base = settings.frontend_base_url or "http://15.135.74.108:3000"
 
     if error or not code or not state:
@@ -48,13 +52,17 @@ async def instagram_callback(code: str | None = None, state: str | None = None, 
     except ValueError:
         return RedirectResponse(f"{frontend_base}/accounts?error=invalid_state")
 
+    # Instagram sometimes appends "#_" to the returned code.
+    code = code.rstrip("#_")
+
     async with httpx.AsyncClient() as client:
         # 1. Exchange code for a short-lived user access token.
-        token_resp = await client.get(
-            f"{GRAPH_API}/oauth/access_token",
-            params={
-                "client_id": settings.meta_app_id,
-                "client_secret": settings.meta_app_secret,
+        token_resp = await client.post(
+            IG_TOKEN_URL,
+            data={
+                "client_id": settings.instagram_app_id,
+                "client_secret": settings.instagram_app_secret,
+                "grant_type": "authorization_code",
                 "redirect_uri": settings.meta_redirect_uri,
                 "code": code,
             },
@@ -66,49 +74,34 @@ async def instagram_callback(code: str | None = None, state: str | None = None, 
 
         # 2. Exchange for a long-lived token (~60 days).
         long_resp = await client.get(
-            f"{GRAPH_API}/oauth/access_token",
+            f"{IG_GRAPH_API}/access_token",
             params={
-                "grant_type": "fb_exchange_token",
-                "client_id": settings.meta_app_id,
-                "client_secret": settings.meta_app_secret,
-                "fb_exchange_token": short_token,
+                "grant_type": "ig_exchange_token",
+                "client_secret": settings.instagram_app_secret,
+                "access_token": short_token,
             },
         )
         long_data = long_resp.json()
         long_token = long_data.get("access_token", short_token)
+        expires_in = long_data.get("expires_in")
 
-        # 3. List the user's Facebook Pages.
-        pages_resp = await client.get(
-            f"{GRAPH_API}/me/accounts",
-            params={"access_token": long_token, "fields": "id,name,access_token"},
+        # 3. Fetch the connected Instagram professional account's profile.
+        profile_resp = await client.get(
+            f"{IG_GRAPH_API}/me",
+            params={"fields": "user_id,username", "access_token": long_token},
         )
-        pages = pages_resp.json().get("data", [])
+        profile = profile_resp.json()
+        ig_user_id = profile.get("user_id") or profile.get("id")
+        username = profile.get("username")
 
-        connected = []
-        for page in pages:
-            page_id = page["id"]
-            page_token = page.get("access_token", long_token)
-
-            ig_resp = await client.get(
-                f"{GRAPH_API}/{page_id}",
-                params={"fields": "instagram_business_account", "access_token": page_token},
-            )
-            ig_data = ig_resp.json().get("instagram_business_account")
-            if not ig_data:
-                continue
-
-            ig_user_id = ig_data["id"]
-
-            profile_resp = await client.get(
-                f"{GRAPH_API}/{ig_user_id}",
-                params={"fields": "username", "access_token": page_token},
-            )
-            username = profile_resp.json().get("username", ig_user_id)
-
-            connected.append((ig_user_id, username, page_id, page_token))
-
-    if not connected:
+    if not ig_user_id or not username:
         return RedirectResponse(f"{frontend_base}/accounts?error=no_instagram_account")
+
+    token_expires_at = None
+    if expires_in:
+        from datetime import datetime, timedelta, timezone
+
+        token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(User).where(User.id == user_id))
@@ -122,26 +115,23 @@ async def instagram_callback(code: str | None = None, state: str | None = None, 
         )
         existing_count = existing_count.scalar_one()
 
-        for ig_user_id, username, page_id, page_token in connected:
-            if existing_count >= plan.max_instagram_accounts:
-                break
-
-            result = await db.execute(
-                select(InstagramAccount).where(
-                    InstagramAccount.user_id == user.id,
-                    InstagramAccount.ig_user_id == ig_user_id,
-                )
+        result = await db.execute(
+            select(InstagramAccount).where(
+                InstagramAccount.user_id == user.id,
+                InstagramAccount.ig_user_id == str(ig_user_id),
             )
-            account = result.scalar_one_or_none()
-            if account is None:
-                account = InstagramAccount(user_id=user.id, ig_user_id=ig_user_id)
-                db.add(account)
-                existing_count += 1
+        )
+        account = result.scalar_one_or_none()
+        if account is None:
+            if existing_count >= plan.max_instagram_accounts:
+                return RedirectResponse(f"{frontend_base}/accounts?error=account_limit_reached")
+            account = InstagramAccount(user_id=user.id, ig_user_id=str(ig_user_id))
+            db.add(account)
 
-            account.username = username
-            account.facebook_page_id = page_id
-            account.access_token_encrypted = encrypt_secret(page_token)
-            account.is_active = True
+        account.username = username
+        account.access_token_encrypted = encrypt_secret(long_token)
+        account.token_expires_at = token_expires_at
+        account.is_active = True
 
         await db.commit()
 

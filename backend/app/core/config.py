@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     meta_redirect_uri: str = ""
     frontend_base_url: str = ""
 
+    instagram_app_id: str = ""
+    instagram_app_secret: str = ""
+
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
 
