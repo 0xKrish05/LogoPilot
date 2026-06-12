@@ -69,6 +69,8 @@ services:
     volumes:
       - media_temp:/tmp/media
       - media_assets:/data/assets
+    networks:
+      - default
 
   scheduler:
     build: ./backend
@@ -77,6 +79,8 @@ services:
     env_file: .env
     depends_on:
       - backend
+    networks:
+      - default
 
   frontend:
     build:
