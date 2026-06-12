@@ -7,6 +7,7 @@ import yt_dlp
 
 from app.models.automation import Automation
 from app.models.queue_item import QueueItem, QueueStatus, RejectionReason
+from app.services.url_utils import sanitize_url
 from app.workers.celery_app import celery_app
 from app.workers.db import SessionLocal
 
@@ -23,7 +24,7 @@ def get_reel_duration_seconds(url: str) -> int:
         "noplaylist": True,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+        info = ydl.extract_info(sanitize_url(url), download=False)
         duration = info.get("duration")
         if duration is None:
             raise ValueError("Could not determine video duration")

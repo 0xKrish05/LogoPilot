@@ -19,6 +19,7 @@ from app.models.queue_item import QueueItem, QueueStatus
 from app.services.edit_engine import apply_logo_overlay, generate_thumbnail
 from app.services.media_storage import cleanup_item_dir, item_dir
 from app.services.scheduler_sync import schedule_new_item_sync
+from app.services.url_utils import sanitize_url
 from app.workers.celery_app import celery_app
 from app.workers.db import SessionLocal
 
@@ -109,7 +110,7 @@ def download_reel(self, queue_item_id: str) -> None:
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([item.source_url])
+                ydl.download([sanitize_url(item.source_url)])
         except Exception as exc:
             return _retry_or_force_stop(self, db, item, exc, "download")
 

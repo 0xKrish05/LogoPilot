@@ -5,6 +5,7 @@ from app.models.automation import Automation
 from app.models.queue_item import QueueItem, QueueStatus, RejectionReason
 from app.schemas.queue_item import BulkUrlResult, QueueItemOut
 from app.services.scheduler import schedule_new_item
+from app.services.url_utils import sanitize_url
 
 
 async def filter_and_enqueue_urls(db: AsyncSession, automation: Automation, urls: list[str]) -> BulkUrlResult:
@@ -37,7 +38,7 @@ async def filter_and_enqueue_urls(db: AsyncSession, automation: Automation, urls
     seen_in_batch: set[str] = set()
 
     for url in urls:
-        url = url.strip()
+        url = sanitize_url(url)
         if not url:
             continue
 
