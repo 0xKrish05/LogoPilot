@@ -2,7 +2,7 @@ import enum
 import uuid
 from typing import Optional
 
-from sqlalchemy import String, Integer, Float, ForeignKey, Enum, Boolean
+from sqlalchemy import String, Integer, Float, ForeignKey, Enum, Boolean, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -72,6 +72,9 @@ class Automation(UUIDPKMixin, TimestampMixin, Base):
 
     # Scheduling
     daily_upload_target: Mapped[int] = mapped_column(Integer, default=5)
+    # Per-day overrides for the next 5 days (index 0 = today, 1 = tomorrow, ...).
+    # null entries (or days beyond index 4) fall back to daily_upload_target.
+    daily_target_overrides: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     night_mode_start: Mapped[str] = mapped_column(String(5), default="00:00")  # HH:MM
     night_mode_end: Mapped[str] = mapped_column(String(5), default="06:00")
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Kolkata")

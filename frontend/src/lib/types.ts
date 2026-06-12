@@ -36,6 +36,7 @@ export interface Automation {
   chroma_key_color: string | null;
   caption_template: string | null;
   daily_upload_target: number;
+  daily_target_overrides: (number | null)[] | null;
   night_mode_start: string;
   night_mode_end: string;
   timezone: string;

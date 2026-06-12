@@ -70,7 +70,7 @@ async def update_automation(
 ):
     automation = await _get_owned_automation(db, automation_id, user)
 
-    schedule_affecting_fields = {"daily_upload_target", "night_mode_start", "night_mode_end"}
+    schedule_affecting_fields = {"daily_upload_target", "daily_target_overrides", "night_mode_start", "night_mode_end"}
     updates = payload.model_dump(exclude_unset=True)
     needs_reschedule = any(f in updates for f in schedule_affecting_fields)
 

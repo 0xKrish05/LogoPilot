@@ -7,6 +7,50 @@ import { useData } from "@/lib/useData";
 import { AutomationStatusBadge, QueueStatusBadge } from "@/components/StatusBadge";
 import type { Automation, IgAccount, LogoPosition, QueueItem } from "@/lib/types";
 
+const DAY_LABELS = ["Today", "Tomorrow", "Day 3", "Day 4", "Day 5"];
+
+/** Offset (in minutes) of `timeZone` from UTC at the given instant. */
+function tzOffsetMinutes(timeZone: string, date: Date): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const map: Record<string, string> = {};
+  for (const p of dtf.formatToParts(date)) map[p.type] = p.value;
+  const hour = map.hour === "24" ? "00" : map.hour;
+  const asUTC = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+    Number(hour),
+    Number(map.minute),
+    Number(map.second)
+  );
+  return (asUTC - date.getTime()) / 60000;
+}
+
+/** ISO UTC timestamp -> "YYYY-MM-DDTHH:mm:ss" wall-clock string in `timeZone`. */
+function toLocalInputValue(iso: string, timeZone: string): string {
+  const date = new Date(iso);
+  const offset = tzOffsetMinutes(timeZone, date);
+  const shifted = new Date(date.getTime() + offset * 60000);
+  return shifted.toISOString().slice(0, 19);
+}
+
+/** "YYYY-MM-DDTHH:mm[:ss]" wall-clock string in `timeZone` -> ISO UTC timestamp. */
+function fromLocalInputValue(value: string, timeZone: string): string {
+  const withSeconds = value.length === 16 ? `${value}:00` : value;
+  const naiveUtc = new Date(`${withSeconds}Z`);
+  const offset = tzOffsetMinutes(timeZone, naiveUtc);
+  return new Date(naiveUtc.getTime() - offset * 60000).toISOString();
+}
+
 const POSITIONS: { value: LogoPosition; label: string }[] = [
   { value: "top_left", label: "Top left" },
   { value: "top_center", label: "Top center" },
@@ -110,7 +154,7 @@ export default function AutomationDetailPage() {
       </div>
 
       {tab === "queue" ? (
-        <QueueTab automationId={id} queue={queue} refresh={refreshQueue} />
+        <QueueTab automationId={id} automation={automation} queue={queue} refresh={refreshQueue} />
       ) : (
         <SettingsTab automation={automation} refresh={refresh} />
       )}
@@ -120,10 +164,12 @@ export default function AutomationDetailPage() {
 
 function QueueTab({
   automationId,
+  automation,
   queue,
   refresh,
 }: {
   automationId: string;
+  automation: Automation;
   queue: QueueItem[];
   refresh: () => void;
 }) {
@@ -132,6 +178,9 @@ function QueueTab({
   const [result, setResult] = useState<string | null>(null);
   const [thumbBusy, setThumbBusy] = useState<Record<string, boolean>>({});
   const [thumbVersion, setThumbVersion] = useState<Record<string, number>>({});
+  const [editingSchedule, setEditingSchedule] = useState<string | null>(null);
+  const [scheduleValue, setScheduleValue] = useState("");
+  const [scheduleBusy, setScheduleBusy] = useState<Record<string, boolean>>({});
 
   const submit = async () => {
     const list = urls
@@ -159,6 +208,30 @@ function QueueTab({
   const retry = async (itemId: string) => {
     await api(`/automations/${automationId}/queue/${itemId}/retry`, { method: "POST" });
     refresh();
+  };
+
+  const startEditSchedule = (q: QueueItem) => {
+    setEditingSchedule(q.id);
+    setScheduleValue(
+      q.scheduled_at ? toLocalInputValue(q.scheduled_at, automation.timezone) : ""
+    );
+  };
+
+  const saveSchedule = async (itemId: string) => {
+    if (!scheduleValue) return;
+    setScheduleBusy((b) => ({ ...b, [itemId]: true }));
+    try {
+      await api(`/automations/${automationId}/queue/${itemId}/schedule`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          scheduled_at: fromLocalInputValue(scheduleValue, automation.timezone),
+        }),
+      });
+      setEditingSchedule(null);
+      refresh();
+    } finally {
+      setScheduleBusy((b) => ({ ...b, [itemId]: false }));
+    }
   };
 
   const uploadThumbnail = async (itemId: string, file: File) => {
@@ -250,7 +323,13 @@ function QueueTab({
                   )}
                 </td>
                 <td className="px-5 py-3.5 text-xs text-ink-soft">
-                  {q.scheduled_at ? new Date(q.scheduled_at).toLocaleString() : "—"}
+                  {q.scheduled_at
+                    ? new Date(q.scheduled_at).toLocaleString("en-IN", {
+                        timeZone: automation.timezone,
+                        dateStyle: "medium",
+                        timeStyle: "medium",
+                      })
+                    : "—"}
                 </td>
                 <td className="max-w-[180px] truncate px-5 py-3.5 text-xs">
                   {q.uploaded_reel_url ? (
@@ -269,11 +348,21 @@ function QueueTab({
                   )}
                 </td>
                 <td className="px-5 py-3.5 text-right">
-                  {(q.status === "failed" || q.status === "force_stopped") && (
-                    <button onClick={() => retry(q.id)} className="btn-ghost !px-3 !py-1.5 text-xs">
-                      ↻ Retry
-                    </button>
-                  )}
+                  <div className="flex items-center justify-end gap-2">
+                    {(q.status === "queued" || q.status === "waiting") && (
+                      <button
+                        onClick={() => startEditSchedule(q)}
+                        className="btn-ghost !px-3 !py-1.5 text-xs"
+                      >
+                        ✏️ Edit
+                      </button>
+                    )}
+                    {(q.status === "failed" || q.status === "force_stopped") && (
+                      <button onClick={() => retry(q.id)} className="btn-ghost !px-3 !py-1.5 text-xs">
+                        ↻ Retry
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -287,6 +376,42 @@ function QueueTab({
           </tbody>
         </table>
       </div>
+
+      {editingSchedule && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setEditingSchedule(null)}
+        >
+          <div
+            className="card w-full max-w-sm p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display text-sm font-bold">Reschedule reel</h3>
+            <p className="mt-1 text-xs text-ink-faint">
+              Pick a new date and time ({automation.timezone}) for this reel to be posted.
+            </p>
+            <input
+              type="datetime-local"
+              step={1}
+              className="input mt-3"
+              value={scheduleValue}
+              onChange={(e) => setScheduleValue(e.target.value)}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setEditingSchedule(null)} className="btn-ghost">
+                Cancel
+              </button>
+              <button
+                onClick={() => saveSchedule(editingSchedule)}
+                disabled={!scheduleValue || scheduleBusy[editingSchedule]}
+                className="btn-primary"
+              >
+                {scheduleBusy[editingSchedule] ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -308,6 +433,10 @@ function SettingsTab({
     chroma_key_color: automation.chroma_key_color ?? "",
     caption_template: automation.caption_template ?? "",
     daily_upload_target: automation.daily_upload_target,
+    daily_target_overrides: Array.from(
+      { length: 5 },
+      (_, i) => automation.daily_target_overrides?.[i] ?? null
+    ) as (number | null)[],
     night_mode_start: automation.night_mode_start,
     night_mode_end: automation.night_mode_end,
     min_reel_duration_seconds: automation.min_reel_duration_seconds,
@@ -565,6 +694,33 @@ function SettingsTab({
               value={form.min_reel_duration_seconds}
               onChange={(e) => set("min_reel_duration_seconds", Number(e.target.value))}
             />
+          </div>
+          <div className="col-span-2">
+            <label className="label">Next 5 days — upload targets</label>
+            <p className="-mt-1 mb-2 text-xs text-ink-faint">
+              Override how many reels go out on each of the next 5 days — handy when bulk-adding
+              hundreds of links. Leave blank to use the default ({form.daily_upload_target}/day).
+            </p>
+            <div className="grid grid-cols-5 gap-2">
+              {DAY_LABELS.map((label, i) => (
+                <div key={label}>
+                  <label className="label !text-[10px]">{label}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder={String(form.daily_upload_target)}
+                    className="input !px-2 text-center"
+                    value={form.daily_target_overrides[i] ?? ""}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const next = [...form.daily_target_overrides];
+                      next[i] = raw === "" ? null : Number(raw);
+                      set("daily_target_overrides", next);
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
           <div>
             <label className="label">Night mode start</label>

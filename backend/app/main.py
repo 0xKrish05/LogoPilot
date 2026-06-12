@@ -14,6 +14,7 @@ import app.models  # noqa: F401  (register all tables on Base.metadata)
 # tables). Each statement must be safe to re-run on every startup.
 SCHEMA_PATCHES = [
     "ALTER TABLE queue_items ADD COLUMN IF NOT EXISTS thumbnail_path VARCHAR",
+    "ALTER TABLE automations ADD COLUMN IF NOT EXISTS daily_target_overrides JSON",
 ]
 
 

@@ -21,6 +21,7 @@ class AutomationBase(BaseModel):
     caption_template: Optional[str] = None
 
     daily_upload_target: int = 5
+    daily_target_overrides: Optional[list[Optional[int]]] = None
     night_mode_start: str = "00:00"
     night_mode_end: str = "06:00"
     timezone: str = "Asia/Kolkata"
@@ -50,6 +51,7 @@ class AutomationUpdate(BaseModel):
     caption_template: Optional[str] = None
 
     daily_upload_target: Optional[int] = None
+    daily_target_overrides: Optional[list[Optional[int]]] = None
     night_mode_start: Optional[str] = None
     night_mode_end: Optional[str] = None
     timezone: Optional[str] = None
