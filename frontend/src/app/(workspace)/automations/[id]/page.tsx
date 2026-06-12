@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, apiUpload, authedAssetUrl } from "@/lib/api";
 import { useData } from "@/lib/useData";
 import { AutomationStatusBadge, QueueStatusBadge } from "@/components/StatusBadge";
-import type { Automation, LogoPosition, QueueItem } from "@/lib/types";
+import type { Automation, IgAccount, LogoPosition, QueueItem } from "@/lib/types";
 
 const POSITIONS: { value: LogoPosition; label: string }[] = [
   { value: "top_left", label: "Top left" },
@@ -253,8 +253,10 @@ function SettingsTab({
   automation: Automation;
   refresh: () => void;
 }) {
+  const { data: igAccounts } = useData<IgAccount[]>("/instagram/accounts", []);
   const [form, setForm] = useState({
     name: automation.name,
+    instagram_account_id: automation.instagram_account_id ?? "",
     logo_position: automation.logo_position,
     logo_size_percent: automation.logo_size_percent,
     logo_opacity_percent: automation.logo_opacity_percent,
@@ -266,8 +268,11 @@ function SettingsTab({
     min_reel_duration_seconds: automation.min_reel_duration_seconds,
     clipster_submission_url: automation.clipster_submission_url ?? "",
   });
+  const [clipsterCookies, setClipsterCookies] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -280,15 +285,31 @@ function SettingsTab({
         method: "PATCH",
         body: JSON.stringify({
           ...form,
+          instagram_account_id: form.instagram_account_id || null,
           chroma_key_color: form.chroma_key_color || null,
           caption_template: form.caption_template || null,
           clipster_submission_url: form.clipster_submission_url || null,
+          ...(clipsterCookies ? { clipster_cookies: clipsterCookies } : {}),
         }),
       });
+      setClipsterCookies("");
       setSaved(true);
       refresh();
     } finally {
       setBusy(false);
+    }
+  };
+
+  const uploadLogo = async (file: File) => {
+    setLogoBusy(true);
+    setLogoError(null);
+    try {
+      await apiUpload(`/automations/${automation.id}/logo`, file);
+      refresh();
+    } catch (e) {
+      setLogoError(e instanceof Error ? e.message : "Logo upload failed");
+    } finally {
+      setLogoBusy(false);
     }
   };
 
@@ -297,6 +318,56 @@ function SettingsTab({
       {/* Logo settings with visual position picker */}
       <div className="card p-5">
         <h3 className="font-display text-sm font-bold">🎨 Logo overlay</h3>
+
+        {/* Logo file upload */}
+        <div className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-surface-2 p-3">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface">
+            {automation.logo_file_path ? (
+              automation.logo_type && ["mp4", "webm"].includes(automation.logo_type) ? (
+                <video
+                  key={automation.logo_file_path}
+                  src={authedAssetUrl(`/automations/${automation.id}/logo`)}
+                  className="h-full w-full object-contain"
+                  muted
+                  autoPlay
+                  loop
+                  playsInline
+                />
+              ) : (
+                <img
+                  key={automation.logo_file_path}
+                  src={authedAssetUrl(`/automations/${automation.id}/logo`)}
+                  alt="Logo thumbnail"
+                  className="h-full w-full object-contain"
+                />
+              )
+            ) : (
+              <span className="text-2xl">🖼️</span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold">
+              {automation.logo_file_path ? "Logo uploaded ✓" : "No logo uploaded yet"}
+            </p>
+            <p className="text-xs text-ink-faint">PNG, JPG, GIF, WEBP, MP4 or WEBM</p>
+            {logoError && <p className="mt-1 text-xs text-rose-500">{logoError}</p>}
+          </div>
+          <label className="btn-ghost shrink-0 cursor-pointer !px-3 !py-1.5 text-xs">
+            {logoBusy ? "Uploading…" : automation.logo_file_path ? "Replace" : "Upload"}
+            <input
+              type="file"
+              accept=".png,.jpg,.jpeg,.gif,.webp,.mp4,.webm"
+              className="hidden"
+              disabled={logoBusy}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadLogo(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </div>
+
         <div className="mt-4 flex gap-5">
           {/* Phone-shaped preview */}
           <div className="relative h-64 w-36 shrink-0 overflow-hidden rounded-2xl border-2 border-line bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900">
@@ -392,6 +463,26 @@ function SettingsTab({
           <label className="label">Name</label>
           <input className="input" value={form.name} onChange={(e) => set("name", e.target.value)} />
         </div>
+        <div>
+          <label className="label">Instagram account</label>
+          <select
+            className="input"
+            value={form.instagram_account_id}
+            onChange={(e) => set("instagram_account_id", e.target.value)}
+          >
+            <option value="">— Not connected —</option>
+            {igAccounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                @{a.username}
+              </option>
+            ))}
+          </select>
+          {igAccounts.length === 0 && (
+            <p className="mt-1 text-xs text-ink-faint">
+              No Instagram accounts connected yet — go to Accounts to connect one.
+            </p>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">Uploads / day</label>
@@ -449,6 +540,23 @@ function SettingsTab({
             value={form.clipster_submission_url}
             onChange={(e) => set("clipster_submission_url", e.target.value)}
           />
+        </div>
+        <div>
+          <label className="label">
+            Clipster cookies{" "}
+            {automation.has_clipster_cookies && (
+              <span className="ml-1 text-emerald-500">✓ saved</span>
+            )}
+          </label>
+          <textarea
+            className="input h-24 resize-y font-mono text-xs"
+            placeholder='Paste exported cookies JSON here (e.g. from a "Cookie Editor" browser extension). Leave empty to keep the current cookies.'
+            value={clipsterCookies}
+            onChange={(e) => setClipsterCookies(e.target.value)}
+          />
+          <p className="mt-1 text-xs text-ink-faint">
+            Stored encrypted and used by the worker to submit your edited reels to Clipster.
+          </p>
         </div>
       </div>
 

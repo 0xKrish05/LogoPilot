@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.models.automation import Platform, LogoPosition, AutomationStatus
 
@@ -55,6 +55,7 @@ class AutomationUpdate(BaseModel):
     timezone: Optional[str] = None
 
     clipster_submission_url: Optional[str] = None
+    clipster_cookies: Optional[str] = None
     proxy_url: Optional[str] = None
 
 
@@ -66,3 +67,9 @@ class AutomationOut(AutomationBase):
     logo_file_path: Optional[str] = None
     logo_type: Optional[str] = None
     clipster_error: Optional[str] = None
+    clipster_cookies_encrypted: Optional[str] = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def has_clipster_cookies(self) -> bool:
+        return bool(self.clipster_cookies_encrypted)

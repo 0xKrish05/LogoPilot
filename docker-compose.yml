@@ -42,6 +42,7 @@ services:
       - "8001:8000"
     volumes:
       - media_temp:/tmp/media
+      - media_assets:/data/assets
     networks:
       - default
       - coolify
@@ -67,6 +68,7 @@ services:
       - backend
     volumes:
       - media_temp:/tmp/media
+      - media_assets:/data/assets
 
   scheduler:
     build: ./backend
@@ -111,3 +113,4 @@ networks:
 volumes:
   postgres_data:
   media_temp:
+  media_assets:

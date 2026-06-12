@@ -44,6 +44,7 @@ export interface Automation {
   clipster_error: string | null;
   logo_file_path: string | null;
   logo_type: string | null;
+  has_clipster_cookies: boolean;
   proxy_url: string | null;
 }
 

@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { useData } from "@/lib/useData";
 import { AutomationStatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
-import type { Automation } from "@/lib/types";
+import type { Automation, IgAccount } from "@/lib/types";
 
 export default function AutomationsPage() {
   const { data: automations, refresh, error } = useData<Automation[]>("/automations", []);
@@ -98,7 +98,9 @@ function CreateAutomationModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const { data: igAccounts } = useData<IgAccount[]>("/instagram/accounts", []);
   const [name, setName] = useState("");
+  const [instagramAccountId, setInstagramAccountId] = useState("");
   const [dailyTarget, setDailyTarget] = useState(5);
   const [minDuration, setMinDuration] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -116,6 +118,7 @@ function CreateAutomationModal({
         method: "POST",
         body: JSON.stringify({
           name: name.trim(),
+          instagram_account_id: instagramAccountId || null,
           daily_upload_target: dailyTarget,
           min_reel_duration_seconds: minDuration,
         }),
@@ -151,6 +154,21 @@ function CreateAutomationModal({
               onChange={(e) => setName(e.target.value)}
               autoFocus
             />
+          </div>
+          <div>
+            <label className="label">Instagram account</label>
+            <select
+              className="input"
+              value={instagramAccountId}
+              onChange={(e) => setInstagramAccountId(e.target.value)}
+            >
+              <option value="">— Choose later —</option>
+              {igAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  @{a.username}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

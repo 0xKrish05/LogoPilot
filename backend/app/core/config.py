@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     cookie_encryption_key: str = ""
 
     temp_storage_path: str = "/tmp/media"
+    assets_storage_path: str = "/data/assets"
 
 
 settings = Settings()
