@@ -67,6 +67,7 @@ class AutomationOut(AutomationBase):
     status: AutomationStatus
     logo_file_path: Optional[str] = None
     logo_type: Optional[str] = None
+    thumbnail_path: Optional[str] = Field(default=None, exclude=True)
     clipster_error: Optional[str] = None
     clipster_cookies_encrypted: Optional[str] = Field(default=None, exclude=True)
 
@@ -74,3 +75,8 @@ class AutomationOut(AutomationBase):
     @property
     def has_clipster_cookies(self) -> bool:
         return bool(self.clipster_cookies_encrypted)
+
+    @computed_field
+    @property
+    def has_thumbnail(self) -> bool:
+        return bool(self.thumbnail_path)

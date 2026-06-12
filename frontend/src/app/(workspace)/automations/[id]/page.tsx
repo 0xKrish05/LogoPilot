@@ -176,8 +176,6 @@ function QueueTab({
   const [urls, setUrls] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
-  const [thumbBusy, setThumbBusy] = useState<Record<string, boolean>>({});
-  const [thumbVersion, setThumbVersion] = useState<Record<string, number>>({});
   const [editingSchedule, setEditingSchedule] = useState<string | null>(null);
   const [scheduleValue, setScheduleValue] = useState("");
   const [scheduleBusy, setScheduleBusy] = useState<Record<string, boolean>>({});
@@ -234,17 +232,6 @@ function QueueTab({
     }
   };
 
-  const uploadThumbnail = async (itemId: string, file: File) => {
-    setThumbBusy((b) => ({ ...b, [itemId]: true }));
-    try {
-      await apiUpload(`/automations/${automationId}/queue/${itemId}/thumbnail`, file);
-      setThumbVersion((v) => ({ ...v, [itemId]: (v[itemId] ?? 0) + 1 }));
-      refresh();
-    } finally {
-      setThumbBusy((b) => ({ ...b, [itemId]: false }));
-    }
-  };
-
   return (
     <div className="space-y-5">
       <div className="card p-5">
@@ -283,34 +270,16 @@ function QueueTab({
             {queue.map((q) => (
               <tr key={q.id} className="border-b border-line/60 transition hover:bg-surface-2/60">
                 <td className="px-5 py-3.5">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface-2">
-                      {q.has_thumbnail ? (
-                        <img
-                          src={`${authedAssetUrl(
-                            `/automations/${automationId}/queue/${q.id}/thumbnail`
-                          )}?v=${thumbVersion[q.id] ?? 0}`}
-                          alt="Reel thumbnail"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-lg">🎞️</span>
-                      )}
-                    </div>
-                    <label className="btn-ghost shrink-0 cursor-pointer !px-2 !py-1 text-[10px]">
-                      {thumbBusy[q.id] ? "…" : q.has_thumbnail ? "Replace" : "Set"}
-                      <input
-                        type="file"
-                        accept=".png,.jpg,.jpeg,.webp"
-                        className="hidden"
-                        disabled={!!thumbBusy[q.id]}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) uploadThumbnail(q.id, file);
-                          e.target.value = "";
-                        }}
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface-2">
+                    {q.has_thumbnail ? (
+                      <img
+                        src={authedAssetUrl(`/automations/${automationId}/queue/${q.id}/thumbnail`)}
+                        alt="Reel thumbnail"
+                        className="h-full w-full object-cover"
                       />
-                    </label>
+                    ) : (
+                      <span className="text-lg">🎞️</span>
+                    )}
                   </div>
                 </td>
                 <td className="max-w-[220px] truncate px-5 py-3.5 text-ink-soft">
@@ -446,6 +415,9 @@ function SettingsTab({
   const [saved, setSaved] = useState(false);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
+  const [thumbBusy, setThumbBusy] = useState(false);
+  const [thumbError, setThumbError] = useState<string | null>(null);
+  const [thumbVersion, setThumbVersion] = useState(0);
   const [cookiesBusy, setCookiesBusy] = useState(false);
   const [cookiesError, setCookiesError] = useState<string | null>(null);
 
@@ -483,6 +455,30 @@ function SettingsTab({
       setLogoError(e instanceof Error ? e.message : "Logo upload failed");
     } finally {
       setLogoBusy(false);
+    }
+  };
+
+  const uploadThumbnail = async (file: File) => {
+    setThumbBusy(true);
+    setThumbError(null);
+    try {
+      await apiUpload(`/automations/${automation.id}/thumbnail`, file);
+      setThumbVersion((v) => v + 1);
+      refresh();
+    } catch (e) {
+      setThumbError(e instanceof Error ? e.message : "Thumbnail upload failed");
+    } finally {
+      setThumbBusy(false);
+    }
+  };
+
+  const removeThumbnail = async () => {
+    setThumbBusy(true);
+    try {
+      await api(`/automations/${automation.id}/thumbnail`, { method: "DELETE" });
+      refresh();
+    } finally {
+      setThumbBusy(false);
     }
   };
 
@@ -644,6 +640,55 @@ function SettingsTab({
               />
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Reel thumbnail (applied to every uploaded reel) */}
+      <div className="card p-5">
+        <h3 className="font-display text-sm font-bold">🖼️ Reel thumbnail</h3>
+        <p className="mt-1 text-xs text-ink-faint">
+          Upload one image to use as the cover thumbnail for every reel this automation
+          uploads. If left empty, a frame is auto-captured from each video instead.
+        </p>
+        <div className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-surface-2 p-3">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface">
+            {automation.has_thumbnail ? (
+              <img
+                key={thumbVersion}
+                src={`${authedAssetUrl(`/automations/${automation.id}/thumbnail`)}?v=${thumbVersion}`}
+                alt="Reel thumbnail"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span className="text-2xl">🖼️</span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold">
+              {automation.has_thumbnail ? "Thumbnail set ✓" : "No thumbnail set yet"}
+            </p>
+            <p className="text-xs text-ink-faint">PNG, JPG or WEBP</p>
+            {thumbError && <p className="mt-1 text-xs text-rose-500">{thumbError}</p>}
+          </div>
+          <label className="btn-ghost shrink-0 cursor-pointer !px-3 !py-1.5 text-xs">
+            {thumbBusy ? "Uploading…" : automation.has_thumbnail ? "Replace" : "Upload"}
+            <input
+              type="file"
+              accept=".png,.jpg,.jpeg,.webp"
+              className="hidden"
+              disabled={thumbBusy}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadThumbnail(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {automation.has_thumbnail && (
+            <button onClick={removeThumbnail} disabled={thumbBusy} className="btn-ghost shrink-0 !px-3 !py-1.5 text-xs">
+              Remove
+            </button>
+          )}
         </div>
       </div>
 

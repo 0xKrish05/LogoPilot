@@ -70,6 +70,9 @@ class Automation(UUIDPKMixin, TimestampMixin, Base):
     # Caption
     caption_template: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
+    # Single thumbnail applied to every reel uploaded by this automation.
+    thumbnail_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     # Scheduling
     daily_upload_target: Mapped[int] = mapped_column(Integer, default=5)
     # Per-day overrides for the next 5 days (index 0 = today, 1 = tomorrow, ...).

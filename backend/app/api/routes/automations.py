@@ -19,6 +19,7 @@ from app.services.plan_limits import get_active_plan, count_user_automations
 router = APIRouter(prefix="/automations", tags=["automations"])
 
 ALLOWED_LOGO_TYPES = {"png", "jpg", "jpeg", "webp", "gif", "mp4", "webm"}
+ALLOWED_THUMBNAIL_TYPES = {"png", "jpg", "jpeg", "webp"}
 
 
 @router.get("", response_model=list[AutomationOut])
@@ -134,6 +135,70 @@ async def get_logo(
     if automation is None or not automation.logo_file_path or not Path(automation.logo_file_path).exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No logo uploaded")
     return FileResponse(automation.logo_file_path)
+
+
+@router.post("/{automation_id}/thumbnail", response_model=AutomationOut)
+async def upload_thumbnail(
+    automation_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    automation = await _get_owned_automation(db, automation_id, user)
+
+    ext = Path(file.filename or "").suffix.lower().lstrip(".")
+    if ext not in ALLOWED_THUMBNAIL_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported thumbnail file type '.{ext}'. Allowed: {', '.join(sorted(ALLOWED_THUMBNAIL_TYPES))}.",
+        )
+
+    thumbs_dir = Path(settings.assets_storage_path) / "thumbnails"
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Remove any previous default thumbnail for this automation (different extension).
+    for old in thumbs_dir.glob(f"automation-{automation.id}.*"):
+        old.unlink(missing_ok=True)
+
+    dest = thumbs_dir / f"automation-{automation.id}.{ext}"
+    dest.write_bytes(await file.read())
+
+    automation.thumbnail_path = str(dest)
+
+    await db.commit()
+    await db.refresh(automation)
+    return automation
+
+
+@router.get("/{automation_id}/thumbnail")
+async def get_automation_thumbnail(
+    automation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    # Unauthenticated so it can be used directly as an <img src>; the
+    # automation id is an unguessable UUID.
+    result = await db.execute(select(Automation).where(Automation.id == automation_id))
+    automation = result.scalar_one_or_none()
+    if automation is None or not automation.thumbnail_path or not Path(automation.thumbnail_path).exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No thumbnail uploaded")
+    return FileResponse(automation.thumbnail_path)
+
+
+@router.delete("/{automation_id}/thumbnail", response_model=AutomationOut)
+async def delete_automation_thumbnail(
+    automation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    automation = await _get_owned_automation(db, automation_id, user)
+
+    if automation.thumbnail_path:
+        Path(automation.thumbnail_path).unlink(missing_ok=True)
+        automation.thumbnail_path = None
+        await db.commit()
+        await db.refresh(automation)
+
+    return automation
 
 
 @router.post("/{automation_id}/clipster-cookies", response_model=AutomationOut)

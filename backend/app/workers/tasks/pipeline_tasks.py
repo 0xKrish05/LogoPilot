@@ -99,14 +99,19 @@ def download_reel(self, queue_item_id: str) -> None:
             return _retry_or_force_stop(self, db, item, RuntimeError("Download produced no file"), "download")
 
         if not item.thumbnail_path:
-            try:
-                thumbs_dir = Path(settings.assets_storage_path) / "thumbnails"
-                thumbs_dir.mkdir(parents=True, exist_ok=True)
-                thumb_path = thumbs_dir / f"{item.id}.jpg"
-                generate_thumbnail(downloaded, thumb_path)
-                item.thumbnail_path = str(thumb_path)
-            except Exception:
-                logger.exception("Failed to auto-generate thumbnail for queue item %s", item.id)
+            automation = db.get(Automation, item.automation_id)
+            if automation and automation.thumbnail_path and Path(automation.thumbnail_path).exists():
+                # A single custom thumbnail (set in Settings) is reused for every reel.
+                item.thumbnail_path = automation.thumbnail_path
+            else:
+                try:
+                    thumbs_dir = Path(settings.assets_storage_path) / "thumbnails"
+                    thumbs_dir.mkdir(parents=True, exist_ok=True)
+                    thumb_path = thumbs_dir / f"{item.id}.jpg"
+                    generate_thumbnail(downloaded, thumb_path)
+                    item.thumbnail_path = str(thumb_path)
+                except Exception:
+                    logger.exception("Failed to auto-generate thumbnail for queue item %s", item.id)
 
         item.status = QueueStatus.EDITING
         db.commit()
