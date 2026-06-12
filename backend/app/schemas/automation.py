@@ -70,11 +70,17 @@ class AutomationOut(AutomationBase):
     thumbnail_path: Optional[str] = Field(default=None, exclude=True)
     clipster_error: Optional[str] = None
     clipster_cookies_encrypted: Optional[str] = Field(default=None, exclude=True)
+    instagram_cookies_encrypted: Optional[str] = Field(default=None, exclude=True)
 
     @computed_field
     @property
     def has_clipster_cookies(self) -> bool:
         return bool(self.clipster_cookies_encrypted)
+
+    @computed_field
+    @property
+    def has_instagram_cookies(self) -> bool:
+        return bool(self.instagram_cookies_encrypted)
 
     @computed_field
     @property

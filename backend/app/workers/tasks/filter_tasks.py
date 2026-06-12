@@ -14,7 +14,7 @@ from app.workers.db import SessionLocal
 logger = logging.getLogger(__name__)
 
 
-def get_reel_duration_seconds(url: str) -> int:
+def get_reel_duration_seconds(url: str, cookiefile: str | None = None) -> int:
     """Returns the duration of a reel in seconds using yt-dlp, without
     downloading the video."""
     ydl_opts = {
@@ -23,6 +23,8 @@ def get_reel_duration_seconds(url: str) -> int:
         "no_warnings": True,
         "noplaylist": True,
     }
+    if cookiefile:
+        ydl_opts["cookiefile"] = cookiefile
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(sanitize_url(url), download=False)
         duration = info.get("duration")
@@ -49,8 +51,17 @@ def fetch_reel_metadata(self, queue_item_id: str) -> None:
 
         automation = db.get(Automation, item.automation_id)
 
+        cookiefile = None
+        if automation and automation.instagram_cookies_encrypted:
+            from app.core.security import decrypt_secret
+            from app.services.media_storage import item_dir
+
+            cookie_path = item_dir(str(item.id)) / "cookies.txt"
+            cookie_path.write_text(decrypt_secret(automation.instagram_cookies_encrypted))
+            cookiefile = str(cookie_path)
+
         try:
-            duration = get_reel_duration_seconds(item.source_url)
+            duration = get_reel_duration_seconds(item.source_url, cookiefile=cookiefile)
         except Exception as exc:
             logger.warning("Failed to fetch metadata for %s: %s", item.source_url, exc)
             try:

@@ -48,6 +48,7 @@ export interface Automation {
   logo_type: string | null;
   has_thumbnail: boolean;
   has_clipster_cookies: boolean;
+  has_instagram_cookies: boolean;
   proxy_url: string | null;
 }
 

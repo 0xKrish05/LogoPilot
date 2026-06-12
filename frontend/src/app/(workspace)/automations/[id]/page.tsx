@@ -429,6 +429,8 @@ function SettingsTab({
   const [thumbVersion, setThumbVersion] = useState(0);
   const [cookiesBusy, setCookiesBusy] = useState(false);
   const [cookiesError, setCookiesError] = useState<string | null>(null);
+  const [igCookiesBusy, setIgCookiesBusy] = useState(false);
+  const [igCookiesError, setIgCookiesError] = useState<string | null>(null);
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -506,6 +508,24 @@ function SettingsTab({
 
   const removeClipsterCookies = async () => {
     await api(`/automations/${automation.id}/clipster-cookies`, { method: "DELETE" });
+    refresh();
+  };
+
+  const uploadInstagramCookies = async (file: File) => {
+    setIgCookiesBusy(true);
+    setIgCookiesError(null);
+    try {
+      await apiUpload(`/automations/${automation.id}/instagram-cookies`, file);
+      refresh();
+    } catch (e) {
+      setIgCookiesError(e instanceof Error ? e.message : "Cookie upload failed");
+    } finally {
+      setIgCookiesBusy(false);
+    }
+  };
+
+  const removeInstagramCookies = async () => {
+    await api(`/automations/${automation.id}/instagram-cookies`, { method: "DELETE" });
     refresh();
   };
 
@@ -854,6 +874,51 @@ function SettingsTab({
           </div>
           <p className="mt-1 text-xs text-ink-faint">
             Stored encrypted and used by the worker to submit your edited reels to Clipster.
+          </p>
+        </div>
+        <div>
+          <label className="label">
+            Instagram session cookies{" "}
+            {automation.has_instagram_cookies && (
+              <span className="ml-1 text-emerald-500">✓ saved</span>
+            )}
+          </label>
+          <div className="flex items-center gap-3 rounded-xl border border-line bg-surface-2 p-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold">
+                {automation.has_instagram_cookies
+                  ? "cookies.txt uploaded ✓"
+                  : "No Instagram cookies uploaded (optional)"}
+              </p>
+              <p className="text-xs text-ink-faint">
+                Some reels require a logged-in session to download. Export with the &quot;Get
+                cookies.txt LOCALLY&quot; browser extension while logged into Instagram, then
+                upload the file here.
+              </p>
+              {igCookiesError && <p className="mt-1 text-xs text-rose-500">{igCookiesError}</p>}
+            </div>
+            {automation.has_instagram_cookies && (
+              <button onClick={removeInstagramCookies} className="btn-ghost shrink-0 !px-3 !py-1.5 text-xs">
+                Remove
+              </button>
+            )}
+            <label className="btn-ghost shrink-0 cursor-pointer !px-3 !py-1.5 text-xs">
+              {igCookiesBusy ? "Uploading…" : automation.has_instagram_cookies ? "Replace" : "Upload"}
+              <input
+                type="file"
+                accept=".txt"
+                className="hidden"
+                disabled={igCookiesBusy}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadInstagramCookies(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+          <p className="mt-1 text-xs text-ink-faint">
+            Stored encrypted and used by the worker to download restricted/private reels via yt-dlp.
           </p>
         </div>
       </div>

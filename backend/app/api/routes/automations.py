@@ -243,6 +243,47 @@ async def delete_clipster_cookies(
     return automation
 
 
+@router.post("/{automation_id}/instagram-cookies", response_model=AutomationOut)
+async def upload_instagram_cookies(
+    automation_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    automation = await _get_owned_automation(db, automation_id, user)
+
+    raw = (await file.read()).decode("utf-8", errors="ignore")
+    cookies = parse_netscape_cookies(raw)
+    if not cookies:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Couldn't find any cookies in that file. Export a Netscape-format "
+                "cookies.txt (e.g. with the 'Get cookies.txt LOCALLY' browser "
+                "extension while logged into Instagram) and try again."
+            ),
+        )
+
+    automation.instagram_cookies_encrypted = encrypt_secret(raw)
+
+    await db.commit()
+    await db.refresh(automation)
+    return automation
+
+
+@router.delete("/{automation_id}/instagram-cookies", response_model=AutomationOut)
+async def delete_instagram_cookies(
+    automation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    automation = await _get_owned_automation(db, automation_id, user)
+    automation.instagram_cookies_encrypted = None
+    await db.commit()
+    await db.refresh(automation)
+    return automation
+
+
 @router.delete("/{automation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_automation(
     automation_id: uuid.UUID,

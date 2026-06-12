@@ -90,5 +90,9 @@ class Automation(UUIDPKMixin, TimestampMixin, Base):
     clipster_submission_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     clipster_error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
+    # Instagram session cookies (Netscape cookies.txt), passed to yt-dlp so
+    # restricted/login-walled reels can be downloaded.
+    instagram_cookies_encrypted: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     # Optional proxy
     proxy_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)

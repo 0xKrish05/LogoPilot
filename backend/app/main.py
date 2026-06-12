@@ -17,6 +17,7 @@ SCHEMA_PATCHES = [
     "ALTER TABLE automations ADD COLUMN IF NOT EXISTS daily_target_overrides JSON",
     "ALTER TABLE automations ADD COLUMN IF NOT EXISTS thumbnail_path VARCHAR",
     "ALTER TYPE queue_status ADD VALUE IF NOT EXISTS 'COOKIE_EXPIRED'",
+    "ALTER TABLE automations ADD COLUMN IF NOT EXISTS instagram_cookies_encrypted VARCHAR",
 ]
 
 

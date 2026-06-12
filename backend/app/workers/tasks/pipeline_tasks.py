@@ -97,6 +97,8 @@ def download_reel(self, queue_item_id: str) -> None:
         item.processing_started_at = item.processing_started_at or datetime.now(timezone.utc)
         db.commit()
 
+        automation = db.get(Automation, item.automation_id)
+
         work_dir = item_dir(str(item.id))
         output_template = str(work_dir / "source.%(ext)s")
 
@@ -107,6 +109,13 @@ def download_reel(self, queue_item_id: str) -> None:
             "no_warnings": True,
             "noplaylist": True,
         }
+
+        if automation and automation.instagram_cookies_encrypted:
+            from app.core.security import decrypt_secret
+
+            cookie_path = work_dir / "cookies.txt"
+            cookie_path.write_text(decrypt_secret(automation.instagram_cookies_encrypted))
+            ydl_opts["cookiefile"] = str(cookie_path)
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -119,7 +128,6 @@ def download_reel(self, queue_item_id: str) -> None:
             return _retry_or_force_stop(self, db, item, RuntimeError("Download produced no file"), "download")
 
         if not item.thumbnail_path:
-            automation = db.get(Automation, item.automation_id)
             if automation and automation.thumbnail_path and Path(automation.thumbnail_path).exists():
                 # A single custom thumbnail (set in Settings) is reused for every reel.
                 item.thumbnail_path = automation.thumbnail_path
