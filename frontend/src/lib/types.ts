@@ -21,7 +21,8 @@ export type QueueStatus =
   | "retrying"
   | "failed"
   | "force_stopped"
-  | "rejected";
+  | "rejected"
+  | "cookie_expired";
 
 export interface Automation {
   id: string;

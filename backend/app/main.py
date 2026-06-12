@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.api.routes import admin, automations, instagram, queue, users
+from app.api.routes import admin, automations, instagram, media, queue, users
 from app.db.base import Base
 from app.db.session import AsyncSessionLocal, engine
 from app.db.seed import seed_defaults
@@ -16,6 +16,7 @@ SCHEMA_PATCHES = [
     "ALTER TABLE queue_items ADD COLUMN IF NOT EXISTS thumbnail_path VARCHAR",
     "ALTER TABLE automations ADD COLUMN IF NOT EXISTS daily_target_overrides JSON",
     "ALTER TABLE automations ADD COLUMN IF NOT EXISTS thumbnail_path VARCHAR",
+    "ALTER TYPE queue_status ADD VALUE IF NOT EXISTS 'COOKIE_EXPIRED'",
 ]
 
 
@@ -45,6 +46,7 @@ app.include_router(automations.router, prefix="/api")
 app.include_router(queue.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(instagram.router, prefix="/api")
+app.include_router(media.router, prefix="/api")
 
 
 @app.get("/health")

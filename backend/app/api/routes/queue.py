@@ -85,17 +85,29 @@ async def retry_queue_item(
     await _get_owned_automation(db, automation_id, user)
     item = await _get_queue_item(db, automation_id, queue_item_id)
 
-    if item.status != QueueStatus.FORCE_STOPPED:
+    retryable = (QueueStatus.FORCE_STOPPED, QueueStatus.FAILED, QueueStatus.COOKIE_EXPIRED)
+    if item.status not in retryable:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only force-stopped items can be manually retried.",
+            detail="Only failed, force-stopped or cookie-expired items can be manually retried.",
         )
 
-    item.status = QueueStatus.QUEUED
     item.retry_count = 0
     item.last_error = None
-    await db.commit()
-    await db.refresh(item)
+
+    if item.uploaded_reel_url:
+        # Already published to Instagram — never re-upload a duplicate;
+        # resume at the Clipster submission stage.
+        item.status = QueueStatus.SUBMITTING
+        await db.commit()
+        await db.refresh(item)
+        from app.workers.tasks.pipeline_tasks import submit_to_clipster
+        submit_to_clipster.delay(str(item.id))
+    else:
+        item.status = QueueStatus.QUEUED
+        await db.commit()
+        await db.refresh(item)
+
     return item
 
 

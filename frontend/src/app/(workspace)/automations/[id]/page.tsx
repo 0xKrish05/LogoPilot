@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api, apiUpload, authedAssetUrl } from "@/lib/api";
 import { useData } from "@/lib/useData";
@@ -180,6 +180,13 @@ function QueueTab({
   const [scheduleValue, setScheduleValue] = useState("");
   const [scheduleBusy, setScheduleBusy] = useState<Record<string, boolean>>({});
 
+  // Live status: poll the queue so transitions (queued -> downloading -> ...)
+  // appear without a manual page refresh.
+  useEffect(() => {
+    const id = setInterval(refresh, 10000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
   const submit = async () => {
     const list = urls
       .split(/\s+/)
@@ -326,7 +333,9 @@ function QueueTab({
                         ✏️ Edit
                       </button>
                     )}
-                    {(q.status === "failed" || q.status === "force_stopped") && (
+                    {(q.status === "failed" ||
+                      q.status === "force_stopped" ||
+                      q.status === "cookie_expired") && (
                       <button onClick={() => retry(q.id)} className="btn-ghost !px-3 !py-1.5 text-xs">
                         ↻ Retry
                       </button>
@@ -555,6 +564,54 @@ function SettingsTab({
           </label>
         </div>
 
+        {/* Reel thumbnail — one image used as the cover for every uploaded reel */}
+        <div className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-surface-2 p-3">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface">
+            {automation.has_thumbnail ? (
+              <img
+                key={thumbVersion}
+                src={`${authedAssetUrl(`/automations/${automation.id}/thumbnail`)}?v=${thumbVersion}`}
+                alt="Reel thumbnail"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span className="text-2xl">🖼️</span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold">
+              {automation.has_thumbnail ? "Reel thumbnail set ✓" : "Reel thumbnail (optional)"}
+            </p>
+            <p className="text-xs text-ink-faint">
+              One image used as the cover for every uploaded reel. PNG, JPG or WEBP.
+            </p>
+            {thumbError && <p className="mt-1 text-xs text-rose-500">{thumbError}</p>}
+          </div>
+          <label className="btn-ghost shrink-0 cursor-pointer !px-3 !py-1.5 text-xs">
+            {thumbBusy ? "Uploading…" : automation.has_thumbnail ? "Replace" : "Upload"}
+            <input
+              type="file"
+              accept=".png,.jpg,.jpeg,.webp"
+              className="hidden"
+              disabled={thumbBusy}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadThumbnail(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          {automation.has_thumbnail && (
+            <button
+              onClick={removeThumbnail}
+              disabled={thumbBusy}
+              className="btn-ghost shrink-0 !px-3 !py-1.5 text-xs"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+
         <div className="mt-4 flex gap-5">
           {/* Phone-shaped preview */}
           <div className="relative h-64 w-36 shrink-0 overflow-hidden rounded-2xl border-2 border-line bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900">
@@ -640,55 +697,6 @@ function SettingsTab({
               />
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Reel thumbnail (applied to every uploaded reel) */}
-      <div className="card p-5">
-        <h3 className="font-display text-sm font-bold">🖼️ Reel thumbnail</h3>
-        <p className="mt-1 text-xs text-ink-faint">
-          Upload one image to use as the cover thumbnail for every reel this automation
-          uploads. If left empty, a frame is auto-captured from each video instead.
-        </p>
-        <div className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-surface-2 p-3">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface">
-            {automation.has_thumbnail ? (
-              <img
-                key={thumbVersion}
-                src={`${authedAssetUrl(`/automations/${automation.id}/thumbnail`)}?v=${thumbVersion}`}
-                alt="Reel thumbnail"
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <span className="text-2xl">🖼️</span>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold">
-              {automation.has_thumbnail ? "Thumbnail set ✓" : "No thumbnail set yet"}
-            </p>
-            <p className="text-xs text-ink-faint">PNG, JPG or WEBP</p>
-            {thumbError && <p className="mt-1 text-xs text-rose-500">{thumbError}</p>}
-          </div>
-          <label className="btn-ghost shrink-0 cursor-pointer !px-3 !py-1.5 text-xs">
-            {thumbBusy ? "Uploading…" : automation.has_thumbnail ? "Replace" : "Upload"}
-            <input
-              type="file"
-              accept=".png,.jpg,.jpeg,.webp"
-              className="hidden"
-              disabled={thumbBusy}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) uploadThumbnail(file);
-                e.target.value = "";
-              }}
-            />
-          </label>
-          {automation.has_thumbnail && (
-            <button onClick={removeThumbnail} disabled={thumbBusy} className="btn-ghost shrink-0 !px-3 !py-1.5 text-xs">
-              Remove
-            </button>
-          )}
         </div>
       </div>
 

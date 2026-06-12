@@ -43,7 +43,13 @@ def assign_schedule(queue_item_id: str) -> None:
 @celery_app.task(name="app.workers.tasks.pipeline_tasks.dispatch_due_items")
 def dispatch_due_items() -> None:
     """Periodic task (every 30s). Finds QueueItems with status=QUEUED and
-    scheduled_at <= now, marks them WAITING, and dispatches download_reel."""
+    scheduled_at <= now, marks them WAITING, and dispatches download_reel.
+
+    Also rescues items stranded in WAITING for over 10 minutes — their
+    dispatched task was lost (e.g. Redis restarted during a deploy) and no
+    worker will ever pick them up otherwise."""
+    from datetime import timedelta
+
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
@@ -56,6 +62,19 @@ def dispatch_due_items() -> None:
 
         for item in due_items:
             item.status = QueueStatus.WAITING
+            db.commit()
+            download_reel.delay(str(item.id))
+
+        stranded = db.execute(
+            select(QueueItem).where(
+                QueueItem.status == QueueStatus.WAITING,
+                QueueItem.updated_at <= now - timedelta(minutes=10),
+            )
+        ).scalars().all()
+
+        for item in stranded:
+            logger.warning("Re-dispatching stranded WAITING item %s", item.id)
+            item.updated_at = now  # reset the 10-minute window
             db.commit()
             download_reel.delay(str(item.id))
     finally:
@@ -162,24 +181,67 @@ def upload_reel(self, queue_item_id: str) -> None:
     """Uploads the edited video to the connected Instagram account via the
     Instagram Graph API (Content Publishing). Stores uploaded_reel_url on
     success -> status=SUBMITTING, dispatches submit_to_clipster.
-    On 3rd failure -> status=FORCE_STOPPED + admin notification.
+    On 3rd failure -> status=FORCE_STOPPED + admin notification."""
+    from app.core.security import decrypt_secret
+    from app.models.instagram_account import InstagramAccount
+    from app.services.instagram_publish import publish_reel
 
-    NOT YET IMPLEMENTED: requires a Meta Developer App + completed App Review
-    (instagram_content_publish permission) and each user's IG Business
-    account linked via OAuth (see InstagramAccount model). Implementing this
-    is blocked on you creating the Meta Developer App - I'll prompt you with
-    exact steps when we get to this stage.
-    """
     db = SessionLocal()
     try:
         item = db.get(QueueItem, queue_item_id)
         if item is None:
             return
-        return _retry_or_force_stop(
-            self, db, item,
-            NotImplementedError("Instagram upload not yet implemented - pending Meta App setup"),
-            "upload",
+        automation = db.get(Automation, item.automation_id)
+
+        if not automation.instagram_account_id:
+            return _retry_or_force_stop(
+                self, db, item,
+                RuntimeError("No Instagram account connected to this automation"),
+                "upload",
+            )
+        account = db.get(InstagramAccount, automation.instagram_account_id)
+        if account is None or not account.is_active:
+            return _retry_or_force_stop(
+                self, db, item,
+                RuntimeError("Connected Instagram account is missing or inactive"),
+                "upload",
+            )
+
+        edited = item_dir(str(item.id)) / "edited.mp4"
+        if not edited.exists():
+            return _retry_or_force_stop(self, db, item, RuntimeError("Edited video missing"), "upload")
+
+        public_base = settings.next_public_api_url.rstrip("/")
+        if not public_base:
+            return _retry_or_force_stop(
+                self, db, item,
+                RuntimeError("NEXT_PUBLIC_API_URL is not configured — cannot expose video to Instagram"),
+                "upload",
+            )
+        video_url = f"{public_base}/api/media/{item.id}/reel.mp4"
+        cover_url = (
+            f"{public_base}/api/automations/{automation.id}/queue/{item.id}/thumbnail"
+            if item.thumbnail_path and Path(item.thumbnail_path).exists()
+            else None
         )
+
+        try:
+            _media_id, permalink = publish_reel(
+                ig_user_id=account.ig_user_id,
+                access_token=decrypt_secret(account.access_token_encrypted),
+                video_url=video_url,
+                caption=automation.caption_template or None,
+                cover_url=cover_url,
+            )
+        except Exception as exc:
+            return _retry_or_force_stop(self, db, item, exc, "upload")
+
+        item.uploaded_reel_url = permalink
+        item.status = QueueStatus.SUBMITTING
+        item.retry_count = 0  # fresh retry budget for the submission stage
+        db.commit()
+
+        submit_to_clipster.delay(str(item.id))
     finally:
         db.close()
 
@@ -189,23 +251,69 @@ def submit_to_clipster(self, queue_item_id: str) -> None:
     """Loads the automation's encrypted Clipster cookies via Playwright,
     opens clipster_submission_url, and submits uploaded_reel_url.
     On success -> status=COMPLETED, deletes all temp media for this item.
-    On cookie/site errors -> sets automation.clipster_error and prompts the
-    user for new cookies. On 3rd failure -> FORCE_STOPPED + admin notification.
+    On cookie expiration -> status=COOKIE_EXPIRED (no retry burned) and the
+    automation is flagged so the user uploads fresh cookies.
+    On 3rd failure -> FORCE_STOPPED + admin notification."""
+    from app.core.security import decrypt_secret
+    from app.models.automation import AutomationStatus as AutoStatus
+    from app.services.clipster import (
+        ClipsterCookiesExpired,
+        sanitize_cookies,
+        submit_reel,
+    )
+    from app.services.cookies import parse_netscape_cookies
 
-    NOT YET IMPLEMENTED: requires a recorded walkthrough of the Clipster
-    submission flow + a sample cookies.txt from you to script the Playwright
-    steps against.
-    """
     db = SessionLocal()
     try:
         item = db.get(QueueItem, queue_item_id)
         if item is None:
             return
-        return _retry_or_force_stop(
-            self, db, item,
-            NotImplementedError("Clipster submission not yet implemented - pending workflow recording"),
-            "submit",
+        automation = db.get(Automation, item.automation_id)
+
+        # Upload-only automation: no submission configured -> done.
+        if not automation.clipster_submission_url:
+            item.status = QueueStatus.COMPLETED
+            item.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            cleanup_item_dir(str(item.id))
+            return
+
+        if not automation.clipster_cookies_encrypted:
+            item.status = QueueStatus.COOKIE_EXPIRED
+            item.last_error = "[submit] No Clipster cookies uploaded — add cookies in Settings."
+            automation.clipster_error = "Clipster cookies missing — upload a cookies.txt in Settings."
+            automation.status = AutoStatus.ERROR
+            db.commit()
+            return
+
+        cookies = sanitize_cookies(
+            parse_netscape_cookies(decrypt_secret(automation.clipster_cookies_encrypted))
         )
+
+        try:
+            submit_reel(
+                cookies=cookies,
+                submission_url=automation.clipster_submission_url,
+                reel_url=item.uploaded_reel_url,
+                proxy_url=automation.proxy_url,
+            )
+        except ClipsterCookiesExpired as exc:
+            # Cookie expiry never consumes retry attempts.
+            item.status = QueueStatus.COOKIE_EXPIRED
+            item.last_error = f"[submit] {exc}"
+            automation.clipster_error = str(exc)
+            automation.status = AutoStatus.ERROR
+            db.commit()
+            return
+        except Exception as exc:
+            return _retry_or_force_stop(self, db, item, exc, "submit")
+
+        item.status = QueueStatus.COMPLETED
+        item.completed_at = datetime.now(timezone.utc)
+        item.last_error = None
+        automation.clipster_error = None
+        db.commit()
+        cleanup_item_dir(str(item.id))
     finally:
         db.close()
 

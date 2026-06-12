@@ -24,6 +24,7 @@ class QueueStatus(str, enum.Enum):
     FAILED = "failed"
     FORCE_STOPPED = "force_stopped"
     REJECTED = "rejected"
+    COOKIE_EXPIRED = "cookie_expired"
 
 
 class RejectionReason(str, enum.Enum):

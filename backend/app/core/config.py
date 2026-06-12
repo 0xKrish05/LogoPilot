@@ -36,5 +36,10 @@ class Settings(BaseSettings):
     temp_storage_path: str = "/tmp/media"
     assets_storage_path: str = "/data/assets"
 
+    # Public base URL of this API (e.g. https://api.example.com). Reuses the
+    # frontend's NEXT_PUBLIC_API_URL env var. The Instagram Graph API fetches
+    # edited videos from {base}/api/media/{item_id}/reel.mp4 during upload.
+    next_public_api_url: str = ""
+
 
 settings = Settings()

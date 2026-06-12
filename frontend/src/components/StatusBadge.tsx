@@ -13,6 +13,7 @@ const QUEUE_STYLES: Record<QueueStatus, { bg: string; dot: string; label: string
   failed: { bg: "bg-rose-500/10 text-rose-600 dark:text-rose-400", dot: "bg-rose-500", label: "Failed" },
   force_stopped: { bg: "bg-red-500/10 text-red-600 dark:text-red-400", dot: "bg-red-600", label: "Force stopped" },
   rejected: { bg: "bg-pink-500/10 text-pink-600 dark:text-pink-400", dot: "bg-pink-500", label: "Rejected" },
+  cookie_expired: { bg: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400", dot: "bg-yellow-500", label: "Cookies expired" },
 };
 
 export function QueueStatusBadge({ status }: { status: QueueStatus }) {
