@@ -131,6 +131,25 @@ def apply_logo_overlay(
     return output_video
 
 
+def generate_thumbnail(input_video: Path, output_image: Path, at_seconds: float = 1.0) -> Path:
+    """Extracts a single frame from input_video as a JPEG thumbnail.
+
+    Used as the default reel cover when the user hasn't uploaded a custom one.
+    """
+    duration = probe_duration(input_video)
+    timestamp = min(at_seconds, max(duration - 0.1, 0))
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(timestamp),
+        "-i", str(input_video),
+        "-frames:v", "1",
+        str(output_image),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+    return output_image
+
+
 def ffmpeg_command_string(automation: Automation, input_video: Path, logo_path: Path, output_video: Path) -> str:
     """Returns the FFmpeg command as a shell string (for logging/debugging)."""
     reel_duration = probe_duration(input_video)

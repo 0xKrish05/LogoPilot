@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.models.queue_item import QueueStatus, RejectionReason
 
@@ -20,6 +20,12 @@ class QueueItemOut(BaseModel):
     uploaded_reel_url: Optional[str] = None
     retry_count: int
     last_error: Optional[str] = None
+    thumbnail_path: Optional[str] = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def has_thumbnail(self) -> bool:
+        return bool(self.thumbnail_path)
 
 
 class BulkUrlSubmission(BaseModel):

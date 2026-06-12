@@ -1,9 +1,12 @@
 import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.automation import Automation
@@ -13,6 +16,8 @@ from app.schemas.queue_item import BulkUrlSubmission, BulkUrlResult, QueueItemOu
 from app.services.filter_engine import filter_and_enqueue_urls
 
 router = APIRouter(prefix="/automations/{automation_id}/queue", tags=["queue"])
+
+ALLOWED_THUMBNAIL_TYPES = {"png", "jpg", "jpeg", "webp"}
 
 
 @router.get("", response_model=list[QueueItemOut])
@@ -92,6 +97,56 @@ async def retry_queue_item(
     await db.commit()
     await db.refresh(item)
     return item
+
+
+@router.post("/{queue_item_id}/thumbnail", response_model=QueueItemOut)
+async def upload_thumbnail(
+    automation_id: uuid.UUID,
+    queue_item_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await _get_owned_automation(db, automation_id, user)
+    item = await _get_queue_item(db, automation_id, queue_item_id)
+
+    ext = Path(file.filename or "").suffix.lower().lstrip(".")
+    if ext not in ALLOWED_THUMBNAIL_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported thumbnail file type '.{ext}'. Allowed: {', '.join(sorted(ALLOWED_THUMBNAIL_TYPES))}.",
+        )
+
+    thumbs_dir = Path(settings.assets_storage_path) / "thumbnails"
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+
+    for old in thumbs_dir.glob(f"{item.id}.*"):
+        old.unlink(missing_ok=True)
+
+    dest = thumbs_dir / f"{item.id}.{ext}"
+    dest.write_bytes(await file.read())
+
+    item.thumbnail_path = str(dest)
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+@router.get("/{queue_item_id}/thumbnail")
+async def get_thumbnail(
+    automation_id: uuid.UUID,
+    queue_item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    # Unauthenticated so it can be used directly as an <img src>; the
+    # queue item id is an unguessable UUID.
+    result = await db.execute(
+        select(QueueItem).where(QueueItem.id == queue_item_id, QueueItem.automation_id == automation_id)
+    )
+    item = result.scalar_one_or_none()
+    if item is None or not item.thumbnail_path or not Path(item.thumbnail_path).exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No thumbnail available")
+    return FileResponse(item.thumbnail_path)
 
 
 async def _get_owned_automation(db: AsyncSession, automation_id: uuid.UUID, user: User) -> Automation:

@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.models.automation import Automation, AutomationStatus
 from app.models.platform_settings import PlatformSettings
 from app.models.queue_item import QueueItem, QueueStatus
-from app.services.edit_engine import apply_logo_overlay
+from app.services.edit_engine import apply_logo_overlay, generate_thumbnail
 from app.services.media_storage import cleanup_item_dir, item_dir
 from app.services.scheduler_sync import schedule_new_item_sync
 from app.workers.celery_app import celery_app
@@ -97,6 +97,16 @@ def download_reel(self, queue_item_id: str) -> None:
         downloaded = next(work_dir.glob("source.*"), None)
         if downloaded is None:
             return _retry_or_force_stop(self, db, item, RuntimeError("Download produced no file"), "download")
+
+        if not item.thumbnail_path:
+            try:
+                thumbs_dir = Path(settings.assets_storage_path) / "thumbnails"
+                thumbs_dir.mkdir(parents=True, exist_ok=True)
+                thumb_path = thumbs_dir / f"{item.id}.jpg"
+                generate_thumbnail(downloaded, thumb_path)
+                item.thumbnail_path = str(thumb_path)
+            except Exception:
+                logger.exception("Failed to auto-generate thumbnail for queue item %s", item.id)
 
         item.status = QueueStatus.EDITING
         db.commit()

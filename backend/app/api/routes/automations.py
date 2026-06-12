@@ -13,6 +13,7 @@ from app.db.session import get_db
 from app.models.automation import Automation
 from app.models.user import User
 from app.schemas.automation import AutomationCreate, AutomationOut, AutomationUpdate
+from app.services.cookies import parse_netscape_cookies
 from app.services.plan_limits import get_active_plan, count_user_automations
 
 router = APIRouter(prefix="/automations", tags=["automations"])
@@ -72,10 +73,6 @@ async def update_automation(
     schedule_affecting_fields = {"daily_upload_target", "night_mode_start", "night_mode_end"}
     updates = payload.model_dump(exclude_unset=True)
     needs_reschedule = any(f in updates for f in schedule_affecting_fields)
-
-    clipster_cookies = updates.pop("clipster_cookies", None)
-    if clipster_cookies is not None:
-        automation.clipster_cookies_encrypted = encrypt_secret(clipster_cookies) if clipster_cookies else None
 
     for field, value in updates.items():
         setattr(automation, field, value)
@@ -137,6 +134,48 @@ async def get_logo(
     if automation is None or not automation.logo_file_path or not Path(automation.logo_file_path).exists():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No logo uploaded")
     return FileResponse(automation.logo_file_path)
+
+
+@router.post("/{automation_id}/clipster-cookies", response_model=AutomationOut)
+async def upload_clipster_cookies(
+    automation_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    automation = await _get_owned_automation(db, automation_id, user)
+
+    raw = (await file.read()).decode("utf-8", errors="ignore")
+    cookies = parse_netscape_cookies(raw)
+    if not cookies:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Couldn't find any cookies in that file. Export a Netscape-format "
+                "cookies.txt (e.g. with the 'Get cookies.txt LOCALLY' browser "
+                "extension while logged into Clipster) and try again."
+            ),
+        )
+
+    automation.clipster_cookies_encrypted = encrypt_secret(raw)
+    automation.clipster_error = None
+
+    await db.commit()
+    await db.refresh(automation)
+    return automation
+
+
+@router.delete("/{automation_id}/clipster-cookies", response_model=AutomationOut)
+async def delete_clipster_cookies(
+    automation_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    automation = await _get_owned_automation(db, automation_id, user)
+    automation.clipster_cookies_encrypted = None
+    await db.commit()
+    await db.refresh(automation)
+    return automation
 
 
 @router.delete("/{automation_id}", status_code=status.HTTP_204_NO_CONTENT)

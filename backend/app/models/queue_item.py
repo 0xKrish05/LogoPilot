@@ -64,6 +64,7 @@ class QueueItem(UUIDPKMixin, TimestampMixin, Base):
     )
 
     uploaded_reel_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    thumbnail_path: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

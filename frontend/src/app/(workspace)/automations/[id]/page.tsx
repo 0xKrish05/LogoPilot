@@ -130,6 +130,8 @@ function QueueTab({
   const [urls, setUrls] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [thumbBusy, setThumbBusy] = useState<Record<string, boolean>>({});
+  const [thumbVersion, setThumbVersion] = useState<Record<string, number>>({});
 
   const submit = async () => {
     const list = urls
@@ -159,6 +161,17 @@ function QueueTab({
     refresh();
   };
 
+  const uploadThumbnail = async (itemId: string, file: File) => {
+    setThumbBusy((b) => ({ ...b, [itemId]: true }));
+    try {
+      await apiUpload(`/automations/${automationId}/queue/${itemId}/thumbnail`, file);
+      setThumbVersion((v) => ({ ...v, [itemId]: (v[itemId] ?? 0) + 1 }));
+      refresh();
+    } finally {
+      setThumbBusy((b) => ({ ...b, [itemId]: false }));
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="card p-5">
@@ -185,6 +198,7 @@ function QueueTab({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line bg-surface-2 text-left text-xs uppercase tracking-wider text-ink-faint">
+              <th className="px-5 py-3 font-semibold">Thumbnail</th>
               <th className="px-5 py-3 font-semibold">Source</th>
               <th className="px-5 py-3 font-semibold">Status</th>
               <th className="px-5 py-3 font-semibold">Scheduled</th>
@@ -195,6 +209,37 @@ function QueueTab({
           <tbody>
             {queue.map((q) => (
               <tr key={q.id} className="border-b border-line/60 transition hover:bg-surface-2/60">
+                <td className="px-5 py-3.5">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface-2">
+                      {q.has_thumbnail ? (
+                        <img
+                          src={`${authedAssetUrl(
+                            `/automations/${automationId}/queue/${q.id}/thumbnail`
+                          )}?v=${thumbVersion[q.id] ?? 0}`}
+                          alt="Reel thumbnail"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-lg">🎞️</span>
+                      )}
+                    </div>
+                    <label className="btn-ghost shrink-0 cursor-pointer !px-2 !py-1 text-[10px]">
+                      {thumbBusy[q.id] ? "…" : q.has_thumbnail ? "Replace" : "Set"}
+                      <input
+                        type="file"
+                        accept=".png,.jpg,.jpeg,.webp"
+                        className="hidden"
+                        disabled={!!thumbBusy[q.id]}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) uploadThumbnail(q.id, file);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+                </td>
                 <td className="max-w-[220px] truncate px-5 py-3.5 text-ink-soft">
                   {q.source_url}
                 </td>
@@ -234,7 +279,7 @@ function QueueTab({
             ))}
             {queue.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-5 py-10 text-center text-sm text-ink-faint">
+                <td colSpan={6} className="px-5 py-10 text-center text-sm text-ink-faint">
                   Queue is empty — add some reel links above.
                 </td>
               </tr>
@@ -268,11 +313,12 @@ function SettingsTab({
     min_reel_duration_seconds: automation.min_reel_duration_seconds,
     clipster_submission_url: automation.clipster_submission_url ?? "",
   });
-  const [clipsterCookies, setClipsterCookies] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
+  const [cookiesBusy, setCookiesBusy] = useState(false);
+  const [cookiesError, setCookiesError] = useState<string | null>(null);
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -289,10 +335,8 @@ function SettingsTab({
           chroma_key_color: form.chroma_key_color || null,
           caption_template: form.caption_template || null,
           clipster_submission_url: form.clipster_submission_url || null,
-          ...(clipsterCookies ? { clipster_cookies: clipsterCookies } : {}),
         }),
       });
-      setClipsterCookies("");
       setSaved(true);
       refresh();
     } finally {
@@ -311,6 +355,24 @@ function SettingsTab({
     } finally {
       setLogoBusy(false);
     }
+  };
+
+  const uploadClipsterCookies = async (file: File) => {
+    setCookiesBusy(true);
+    setCookiesError(null);
+    try {
+      await apiUpload(`/automations/${automation.id}/clipster-cookies`, file);
+      refresh();
+    } catch (e) {
+      setCookiesError(e instanceof Error ? e.message : "Cookie upload failed");
+    } finally {
+      setCookiesBusy(false);
+    }
+  };
+
+  const removeClipsterCookies = async () => {
+    await api(`/automations/${automation.id}/clipster-cookies`, { method: "DELETE" });
+    refresh();
   };
 
   return (
@@ -548,12 +610,39 @@ function SettingsTab({
               <span className="ml-1 text-emerald-500">✓ saved</span>
             )}
           </label>
-          <textarea
-            className="input h-24 resize-y font-mono text-xs"
-            placeholder='Paste exported cookies JSON here (e.g. from a "Cookie Editor" browser extension). Leave empty to keep the current cookies.'
-            value={clipsterCookies}
-            onChange={(e) => setClipsterCookies(e.target.value)}
-          />
+          <div className="flex items-center gap-3 rounded-xl border border-line bg-surface-2 p-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold">
+                {automation.has_clipster_cookies
+                  ? "cookies.txt uploaded ✓"
+                  : "No Clipster cookies uploaded yet"}
+              </p>
+              <p className="text-xs text-ink-faint">
+                Export with the &quot;Get cookies.txt LOCALLY&quot; browser extension while
+                logged into Clipster, then upload the file here.
+              </p>
+              {cookiesError && <p className="mt-1 text-xs text-rose-500">{cookiesError}</p>}
+            </div>
+            {automation.has_clipster_cookies && (
+              <button onClick={removeClipsterCookies} className="btn-ghost shrink-0 !px-3 !py-1.5 text-xs">
+                Remove
+              </button>
+            )}
+            <label className="btn-ghost shrink-0 cursor-pointer !px-3 !py-1.5 text-xs">
+              {cookiesBusy ? "Uploading…" : automation.has_clipster_cookies ? "Replace" : "Upload"}
+              <input
+                type="file"
+                accept=".txt"
+                className="hidden"
+                disabled={cookiesBusy}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadClipsterCookies(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
           <p className="mt-1 text-xs text-ink-faint">
             Stored encrypted and used by the worker to submit your edited reels to Clipster.
           </p>

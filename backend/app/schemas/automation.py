@@ -55,7 +55,6 @@ class AutomationUpdate(BaseModel):
     timezone: Optional[str] = None
 
     clipster_submission_url: Optional[str] = None
-    clipster_cookies: Optional[str] = None
     proxy_url: Optional[str] = None
 
 

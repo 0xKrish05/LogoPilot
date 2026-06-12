@@ -59,6 +59,7 @@ export interface QueueItem {
   uploaded_reel_url: string | null;
   retry_count: number;
   last_error: string | null;
+  has_thumbnail: boolean;
 }
 
 export interface IgAccount {
